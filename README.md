@@ -16,4 +16,4 @@ DOI: https://doi.org/10.1371/journal.pone.0288558
 ## Data
 - dat_ft_rm.csv: data for the formative test of the course Regulation and Metabolism 
 - dat_ft_da.csv: data for the formative test of the course Diseases of the Abdomen
-- data_dictionary.docx: data dictionary
+- data_dictionary.pdf: data dictionary
