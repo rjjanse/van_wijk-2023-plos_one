@@ -1,0 +1,2055 @@
+---
+title: Analyses for study on using VSAQs instead of MC questions in medical students
+author: "Roemer J. Janse"
+date: "31st of August 2021"
+output:
+  word_document:
+    toc: yes
+    toc_depth: 6
+  pdf_document:
+    toc: yes
+    toc_depth: 6
+  html_document:
+    toc: yes
+    toc_depth: 6
+header-includes:
+- \usepackage{subfig}
+- \usepackage{pdflscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+geometry: left=1.2cm,right=1,2cm,top=1,2cm,bottom=1,2cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, evaluate = TRUE, tidy = TRUE,
+                      cache = FALSE, autodep = TRUE, 
+                      warning = FALSE, message = FALSE,
+                      out.width = '600px', dpi = 100)
+
+knitr::opts_knit$set(root.dir = "C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Codes/Dataframes")
+
+# packages
+pacman::p_load("dplyr","tidyr","Gmisc","knitr", "broom", "ggplot2","survival","reshape2","data.table","tableone", "broom", "formatR", 
+               "xtable","kableExtra","pander","epiR","forestplot","biostat3", "Hmisc","summarytools","twang", "survey", "KMunicate", 
+               "cowplot", "patchwork", "gridExtra", "ggpubr", "stringr", "readr", "lme4", "stargazer", "foreign", "haven")
+options(knitr.table.format = 'markdown')
+
+```
+
+```{r data settings}
+# This is used to load the data
+# SS: a = MC, B = OVKA
+# VB: a = MC, B = OVKA
+
+rm(list = ls()) 
+
+setwd("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Data/Dataframes")
+
+load("ot_ss_data.Rdata")
+load("ot_vb_data.Rdata")
+ot_ss_data <- ot_ss_data %>% mutate(version = ifelse(version == "a", "mc.first", "ov.first"))
+ot_ss_data <- ot_ss_data %>% filter(!is.na(mc01) | !is.na(ov01))
+ot_vb_data <- ot_vb_data %>% mutate(version = ifelse(version == "a", "mc.first", "ov.first"))
+ot_vb_data <- ot_vb_data %>% filter(!is.na(mc01) | !is.na(ov01))
+
+# MC questions for sturing en stofwisseling, keeping only those who answered all questions
+ot_ss_mc <- ot_ss_data %>% dplyr::select(id, mc01:mc25, version)
+ot_ss_mc <- ot_ss_mc[rowSums(is.na(ot_ss_mc)) == 0, ]
+
+# VSAQ questions for sturing en stofwisseling, keeping only those who answered all questions
+ot_ss_vsaq <- ot_ss_data %>% dplyr::select(id, ov01:ov25, version)
+ot_ss_vsaq <- ot_ss_vsaq[rowSums(is.na(ot_ss_vsaq)) == 0, ]
+
+# MC questions for vraagstukken buik, keeping only those who answered all questions
+ot_vb_mc <- ot_vb_data %>% dplyr::select(id, mc01:mc24, version)
+ot_vb_mc <- ot_vb_mc[rowSums(is.na(ot_vb_mc)) == 0, ]
+
+# VSAQ questions for vraagstukken buik, keeping only those who answered all questions
+ot_vb_vsaq <- ot_vb_data %>% dplyr::select(id, ov01:ov24, version)
+ot_vb_vsaq <- ot_vb_vsaq[rowSums(is.na(ot_vb_vsaq)) == 0, ]
+
+# Prepare data export to SPSS for p-value check of MWU
+write_sav(ot_vb_data, "ot_vb_data.sav")
+
+
+
+```
+
+
+## 1. Main outcomes
+# 1.1. Cronbach's alpha
+```{r}
+# Create function to get Cronbach's alpha
+# a = (n * c) / (v + (n - 1)c)
+# N = number of items
+# c = average inter-item covariance
+# v = average variance
+cron.alpha <- function(){
+    # Remove ID column
+    dat.temp <- dat.temp %>% dplyr::select(-id, - version)
+    
+    # Get number of questions (n)
+    n <- as.numeric(ncol(dat.temp))
+
+    # Get average of inter-item covariance (c)
+    cov.mat <- as.data.frame(cov(dat.temp))
+    cov.sum <- 0
+    x <- 0
+
+    for(c in 1:(n-1)){
+        for(r in (c + 1):n){
+            placeholder <- cov.mat[r, c]
+            cov.sum <- cov.sum + placeholder
+            x <- x + 1
+        }
+    }
+
+    c <- cov.sum / x
+
+    # Get average variance (v)
+    var.sum <- 0
+    x <- 0
+
+    for(i in 1:n){
+        placeholder <- cov.mat[i, i]
+        var.sum <- var.sum + placeholder
+        x <- x + 1
+    }
+
+    v <- var.sum / x
+    
+    # Calculate alpha
+    a <- (n * c) / (v + (n - 1) * c)
+    
+    return(round(a, digits = 2))
+}
+
+## Calculate cronbach alpha coefficients for tests
+alpha <- as.data.frame(matrix(NA, nrow = 2, ncol = 8))
+rownames(alpha) <- c("Course", "Cronbach's alpha")
+colnames(alpha) <- c("MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs",
+                     "MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs")
+alpha[1, ] <- c("SS", "SS", "SS", "SS", "VB", "VB", "VB", "VB")
+
+### Sturing en stofwisseling
+## MC questions
+# MC first
+dat.temp <- ot_ss_mc %>% filter(version == "mc.first")
+alpha[2, 1] <- cron.alpha()
+
+# OV first
+dat.temp <- ot_ss_mc %>% filter(version == "ov.first") 
+alpha[2, 3] <- cron.alpha()
+
+## VSAQs
+## MC questions
+# MC first
+dat.temp <- ot_ss_vsaq %>% filter(version == "mc.first")
+alpha[2, 2] <- cron.alpha()
+
+# OV first
+dat.temp <- ot_ss_vsaq %>% filter(version == "ov.first")
+alpha[2, 4] <- cron.alpha()
+
+### Vraagstukken buik 
+## MC questions
+# MC first
+dat.temp <- ot_vb_mc %>% filter(version == "mc.first")
+alpha[2, 5] <- cron.alpha()
+
+# OV first
+dat.temp <- ot_vb_mc %>% filter(version == "ov.first") 
+alpha[2, 7] <- cron.alpha()
+
+## VSAQs
+## MC questions
+# MC first
+dat.temp <- ot_vb_vsaq %>% filter(version == "mc.first")
+alpha[2, 6] <- cron.alpha()
+
+# OV first
+dat.temp <- ot_vb_vsaq %>% filter(version == "ov.first")
+alpha[2, 8] <- cron.alpha()
+
+rm(dat.temp)
+
+```
+
+
+# 1.2. Average R(ir) values
+```{r}
+### How to calculate R(ir) value
+# Function to get R(ir) values per question
+rir <- function(df){
+  dat.temp <- df %>% dplyr::select(-version)
+
+  # Create list of question names
+  questions <- colnames(dat.temp)[colnames(dat.temp) != "id" & colnames(dat.temp) != "points" & colnames(dat.temp) != "score"]
+  values <- as.data.frame(questions) %>% mutate(rir = NA)
+  row <- 1
+  
+  # Start for-loop to get R(ir) per question
+  for(i in questions){
+    # Calculate score on test minus question of interest
+    x.temp <- dat.temp %>% rename(question = i) %>% mutate(points = rowSums(dat.temp) - (id + question),
+                                                           score = points / (ncol(df) - 2) * 100)
+    
+    r <- cor(x.temp$question, x.temp$score)
+    
+    # Store R(ir)
+    values[row, 2] <- r
+    
+    row <- row + 1
+  }
+  
+  return(values)
+  
+}
+
+### Sturing en stofwisseling
+## MCQs
+rir_ss_mc_mc.first <- rir(ot_ss_mc %>% filter(version == "mc.first"))
+rir_ss_mc_ov.first <- rir(ot_ss_mc %>% filter(version == "ov.first"))
+
+## VSAQs
+rir_ss_vsaq_mc.first <- rir(ot_ss_vsaq %>% filter(version == "mc.first"))
+rir_ss_vsaq_ov.first <- rir(ot_ss_vsaq %>% filter(version == "ov.first"))
+
+### Vraagstukken buik
+## MCQs
+rir_vb_mc_mc.first <- rir(ot_vb_mc %>% filter(version == "mc.first"))
+rir_vb_mc_ov.first <- rir(ot_vb_mc %>% filter(version == "ov.first"))
+
+## VSAQs
+rir_vb_vsaq_mc.first <- rir(ot_vb_vsaq %>% filter(version == "mc.first"))
+rir_vb_vsaq_ov.first <- rir(ot_vb_vsaq %>% filter(version == "ov.first"))
+
+### Create table with average R(ir) values
+rirs <- as.data.frame(matrix(NA, nrow = 1, ncol = 8))
+colnames(rirs) <- c("MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs",
+                    "MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs")
+rownames(rirs) <- "Average R(ir)"
+
+rirs[1, 1] <- paste(format(round(mean(rir_ss_mc_mc.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_ss_mc_mc.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 3] <- paste(format(round(mean(rir_ss_mc_ov.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_ss_mc_ov.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 2] <- paste(format(round(mean(rir_ss_vsaq_mc.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_ss_vsaq_mc.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 4] <- paste(format(round(mean(rir_ss_vsaq_ov.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_ss_vsaq_ov.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 5] <- paste(format(round(mean(rir_vb_mc_mc.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_vb_mc_mc.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 7] <- paste(format(round(mean(rir_vb_mc_ov.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_vb_mc_ov.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 6] <- paste(format(round(mean(rir_vb_vsaq_mc.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_vb_vsaq_mc.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rirs[1, 8] <- paste(format(round(mean(rir_vb_vsaq_ov.first$rir), digits = 2), nsmall = 2), " (",
+                    format(round(sd(rir_vb_vsaq_ov.first$rir), digits = 2), nsmall = 2), ")", sep = "") 
+
+rir_ss <- cbind(rir_ss_mc_mc.first, rir_ss_vsaq_mc.first, rir_ss_mc_ov.first, rir_ss_vsaq_ov.first)
+rir_vb <- cbind(rir_vb_mc_mc.first, rir_vb_vsaq_mc.first, rir_vb_mc_ov.first, rir_vb_vsaq_ov.first)
+
+colnames(rir_ss) <- c("MCQ - mcqs first", "R(ir)", "VSAQ - mcqs first", "R(ir)", "MCQs - vsaqs first", "R(ir)", 
+                      "VSAQs - vsaqs first", "R(ir)")
+colnames(rir_vb) <- c("MCQ - mcqs first", "R(ir)", "VSAQ - mcqs first", "R(ir)", "MCQs - vsaqs first", "R(ir)", 
+                      "VSAQs - vsaqs first", "R(ir)")
+
+writexl::write_xlsx(rir_ss, path = "~/Research/[] Medical Education/1. VSAQs/Spreadsheets/rir_ss.xlsx")
+writexl::write_xlsx(rir_vb, path = "~/Research/[] Medical Education/1. VSAQs/Spreadsheets/rir_vb.xlsx")
+
+rm(rir_ss_mc_mc.first, rir_ss_mc_ov.first, rir_ss_vsaq_mc.first, rir_ss_vsaq_ov.first,
+   rir_vb_mc_mc.first, rir_vb_mc_ov.first, rir_vb_vsaq_mc.first, rir_vb_vsaq_ov.first)
+
+```
+
+
+# 1.3. Average scores
+```{r}
+scores <- as.data.frame(matrix(NA, nrow = 1, ncol = 8))
+colnames(scores) <- c("MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs",
+                      "MC first - MCQs", "MC first - VSAQs", "VSAQ first - MCQs", "VSAQ first - VSAQs")
+rownames(scores) <- "Score"
+
+### Sturing en stofwisseling
+## MCQs
+# First calculate individual scores, then get mean scores
+dat.temp <- ot_ss_mc %>% filter(version == "mc.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 1] <- score
+
+dat.temp <- ot_ss_mc %>% filter(version == "ov.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 3] <- score
+
+## VSAQs
+dat.temp <- ot_ss_vsaq %>% filter(version == "mc.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 2] <- score
+
+dat.temp <- ot_ss_vsaq %>% filter(version == "ov.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 4] <- score
+
+### Vraagstukken buik
+## MCQs
+# First calculate individual scores, then get mean scores
+dat.temp <- ot_vb_mc %>% filter(version == "mc.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 5] <- score
+
+dat.temp <- ot_vb_mc %>% filter(version == "ov.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 7] <- score
+
+## VSAQs
+dat.temp <- ot_vb_vsaq %>% filter(version == "mc.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 6] <- score
+
+dat.temp <- ot_vb_vsaq %>% filter(version == "ov.first") %>% dplyr::select(-version)
+dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                score = (points / (ncol(dat.temp) - 1)) * 100)
+
+score <- paste(as.character(format(round(mean(dat.temp$score), digits = 1), nsmall = 1)), " (", 
+               as.character(format(round(sd(dat.temp$score), digits = 1), nsmall = 1)), ")", sep = "")
+
+scores[1, 8] <- score
+
+tab <- rbind(alpha, rirs, scores) 
+kable(tab)
+
+### Calculate also correlation between scores
+tab.cor <- as.data.frame(matrix(NA, nrow = 2, ncol = 2))
+colnames(tab.cor) <- c("SS", "VB")
+rownames(tab.cor) <- c("MC first", "VSAQ first")
+
+### Function
+scorcor <- function(df, ver){
+  dat.temp <- df %>% filter(version == ver) %>% dplyr::select(-version) 
+  dat.temp <- dat.temp %>% mutate(points = rowSums(dat.temp) - id,
+                                  score = (points / (ncol(dat.temp) - 1)) * 100) %>% dplyr::select(id, score)
+  
+  return(dat.temp)
+}
+
+### Sturing en stofwisseling
+# MC first
+ss_mc.first <- scorcor(ot_ss_mc, "mc.first") %>% left_join(scorcor(ot_ss_vsaq, "mc.first"), "id")
+tab.cor[1, 1] <- cor(ss_mc.first$score.x, ss_mc.first$score.y)
+
+# VSAQ first
+ss_ov.first <- scorcor(ot_ss_mc, "ov.first") %>% left_join(scorcor(ot_ss_vsaq, "ov.first"), "id")
+tab.cor[2, 1] <- cor(ss_ov.first$score.x, ss_ov.first$score.y)
+
+### Vraagstukken buik
+# MC first
+vb_mc.first <- scorcor(ot_vb_mc, "mc.first") %>% left_join(scorcor(ot_vb_vsaq, "mc.first"), "id") %>% filter(!is.na(score.y))
+tab.cor[1, 2] <- cor(vb_mc.first$score.x, vb_mc.first$score.y)
+
+cor.test(vb_mc.first$score.x, vb_mc.first$score.y, method = 'spearman')
+
+# VSAQ first
+vb_ov.first <- scorcor(ot_vb_mc, "ov.first") %>% left_join(scorcor(ot_vb_vsaq, "ov.first"), "id") %>% filter(!is.na(score.x))
+tab.cor[2, 2] <- cor(vb_ov.first$score.x, vb_ov.first$score.y)
+
+kable(tab.cor)
+
+rm(alpha, rirs, scores, rir, cron.alpha)
+
+```
+
+
+# 1.4. Retention
+``` {r}
+# We prepared the data in script VGTdata.R in the same directory as this script
+load("~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/vgt.Rdata")
+
+##### Main analysis: Vraagstukken Buik comparison #####
+vgt <- dat.vgt %>% mutate(blsi = NA, credits = as.numeric(credits)) %>% filter((course != "ss") & (mm >= 1 & mm <= 9))
+
+# Prepare a table for results
+tab <- as.data.frame(matrix(NA, ncol = 3, nrow = 3))
+tab[1, ] <- c("", "Main analysis", "Sensitivity analysis")
+tab[, 1] <- c("", "Mid-long-term retention", "Long-term retention")
+
+# Determine baseline score increase (using linear model) per individual (VGT 1-5)
+for(i in unique(vgt$id)){
+  dat.temp <- filter(vgt, id == i)
+  dat.temp <- dat.temp %>% filter(mm >= 1 & mm <= 5)
+  
+  if(length(dat.temp$id) == 0){
+    next
+  }
+  
+  fit <- lm(score ~ mm, data = dat.temp)$coefficients
+  result <- round(fit[["mm"]], digits = 1)
+  vgt <- vgt %>% mutate(blsi = ifelse(id == i, result, blsi))
+}
+
+# Determine grade at each VGT
+vgt <- vgt %>% arrange(id, mm) %>% group_by(id, mm) %>% mutate(elig = ifelse(year_grade <= year & month_grade <= month, 1, 0),
+                                                               creds_ph = ifelse(elig == 1, credits, NA),
+                                                               sum_creds = sum(creds_ph, na.rm = TRUE),
+                                                               n = sum(elig, na.rm = TRUE),
+                                                               wt_grade = ifelse(elig == 1, grade * credits, NA),
+                                                               grade_avg = sum(wt_grade, na.rm = TRUE) / sum_creds) %>% 
+    ungroup() %>% dplyr::select(-(elig:wt_grade)) %>% arrange(id, mm) %>% group_by(id, mm) %>% slice(1L) %>% ungroup()
+
+### Function to run LMMs
+lmm_func <- function(dat, mm.min, mm.max){
+  ## Model
+  dat.lmm <- filter(dat, (mm >= mm.min & mm <= mm.max) & (!is.na(blsi)) & (!is.na(grade_avg))) 
+  lmm <- lmer(score ~ vsaq + mm + vsaq * mm + (1 + mm|id) + blsi + age + age * vsaq + (1 + age|id) + (1 + grade_avg|id) + female, 
+              data = dat.lmm)
+  
+  ## Enter into table
+  est <- summary(lmm)$coefficients["vsaq:mm", "Estimate"]
+  se <- summary(lmm)$coefficients["vsaq:mm", "Std. Error"]
+  ll <- round(est - (1.96 * se), digits = 1)
+  ul <- round(est + (1.96 * se), digits = 1)
+  em <- round(est, digits = 1)
+
+  result <- paste0(format(em, nsmall = 1), " (", format(ll, nsmall = 1), ", ", format(ul, nsmall = 1), ")", sep = "")
+  
+  ## Assumptions
+  # No pattern present in data?
+  plot.pat <- plot(lmm)
+  
+  # Points fall on the diagonal?
+  plot.dia <- qqnorm(resid(lmm)); qqline(resid(lmm))
+  
+  return(result)
+}
+
+### Mid-long-term retention: VGT 6-8
+tab[2, 2] <- lmm_func(vgt, 6, 8)      
+
+### Long-term retention: VGT 6-9
+tab[3, 2] <- lmm_func(vgt, 6, 9)
+
+##### Sensitivity analysis: SS comparison #####
+vgt <- dat.vgt %>% filter((course != "vb") & (mm >= 1 & mm <= 9)) %>% mutate(credits = as.numeric(credits))
+
+mm1score <- vgt %>% arrange(id, mm) %>% group_by(id) %>% slice(1L) %>% ungroup() %>% mutate(mm1 = score) %>% dplyr::select(id, mm1)
+
+vgt <- vgt %>% left_join(mm1score, "id")
+
+vgt <- vgt %>% arrange(id, mm) %>% group_by(id, mm) %>% mutate(elig = ifelse(year_grade <= year & month_grade <= month, 1, 0),
+                                                               creds_ph = ifelse(elig == 1, credits, NA),
+                                                               sum_creds = sum(creds_ph, na.rm = TRUE),
+                                                               n = sum(elig, na.rm = TRUE),
+                                                               wt_grade = ifelse(elig == 1, grade * credits, NA),
+                                                               grade_avg = sum(wt_grade, na.rm = TRUE) / sum_creds) %>% 
+    ungroup() %>% dplyr::select(-(elig:wt_grade)) %>% arrange(id, mm) %>% group_by(id, mm) %>% slice(1L) %>% ungroup()
+
+### Rewrite function to model not bsli but mm1 score
+lmm_func <- function(dat, mm.min, mm.max){
+  ## Model
+  dat.lmm <- filter(dat, (mm >= mm.min & mm <= mm.max) & (!is.na(mm1)) & (!is.na(grade_avg))) 
+  lmm <- lmer(score ~ vsaq + mm + vsaq * mm + (1 + mm|id) + mm1 + age + age * vsaq + (1 + age|id) + (1 + grade_avg|id) + 
+                  female, data = dat.lmm)
+  
+  ## Enter into table
+  est <- summary(lmm)$coefficients["vsaq:mm", "Estimate"]
+  se <- summary(lmm)$coefficients["vsaq:mm", "Std. Error"]
+  ll <- round(est - (1.96 * se), digits = 1)
+  ul <- round(est + (1.96 * se), digits = 1)
+  em <- round(est, digits = 1)
+
+  result <- paste0(format(em, nsmall = 1), " (", format(ll, nsmall = 1), ", ", format(ul, nsmall = 1), ")", sep = "")
+  
+  ## Assumptions
+  # No pattern present in data?
+  plot.pat <- plot(lmm)
+  
+  # Points fall on the diagonal?
+  plot.dia <- qqnorm(resid(lmm)); qqline(resid(lmm))
+  
+  return(result)
+}
+
+### Mid-long-term retention: VGT 2-4
+tab[2, 3] <- lmm_func(vgt, 2, 4)      
+
+### Long-term retention: VGT 2-5
+tab[3, 3] <- lmm_func(vgt, 2, 5)
+
+kable(tab)        
+          
+```
+
+
+# 2. Secondary outcomes
+## 2.1. Demographics
+```{r}
+# We compare demographics between the top 5% of those who made VSAQs first (version B) and those who made MCQs first (version A).
+# S&S was taken on the 19th of May 2021
+# VBu was taken on the 29th of March 2021
+# Load demographics
+load("~/Datasets/OVKA2021/Dataframes/perdat_dob.Rdata")
+load("~/Datasets/OVKA2021/Dataframes/perdat_tests.Rdata")
+load("~/Datasets/OVKA2021/Dataframes/subject_credits.Rdata")
+
+# Create function to get demographics
+demographics <- function(date){
+  # Create function to easily calculate both VSAQs and MCQs
+  dem <- function(df, type){
+    dat.temp <- df %>% mutate(points = rowSums(df) - id)
+  
+    n <- nrow(dat.temp)
+    x <- ceiling(n * 0.05)
+  
+    placeholder <- dat.temp %>% arrange(desc(points), id) %>% slice(1:x) %>% dplyr::select(id, points)
+  
+    # If one of the top 5% high scores was achieved by multiple students, all their demographics should all be included. So we take the 
+    # lowest score (row x) and select everyone with this score or higher.
+    y <- placeholder[[x, 2]]
+  
+    top5 <- filter(dat.temp, points >= y) %>% dplyr::select(id)
+  
+    top5 <- top5 %>% left_join(perdat.dob, "id") %>% left_join(perdat.tests, c("id", "course", "version")) %>%
+      mutate(age = round(as.numeric(as.Date(date) - as.Date(dob)) / 365.25, digits = 0))
+  
+    top5 <- top5 %>% left_join(subject_credits, "subject") %>% relocate(credits, .after = subject) 
+  
+    # Average mark per person
+    # First keep only exams finished before the test
+    top5 <- top5 %>% filter(dat <= as.Date(date)) %>% mutate(weighted_grade = as.numeric(credits) * grade) %>%
+    arrange(id) %>% group_by(id) %>% mutate(avg_grade = round(sum(weighted_grade) / sum(as.numeric(credits)), digits = 1)) %>%
+    slice(1L) %>% ungroup() %>% dplyr::select(id, age, female, avg_grade)
+    
+    n <- nrow(top5)
+    
+    # Calculate sex proportions
+    sex.props <- as.data.frame(proportions(table(top5$female)) * 100)
+    nrow.sex <- nrow(sex.props)
+    sex.prop.female <- paste(round(sex.props[[nrow.sex, 2]], digits = 1), "%", sep = "")
+    
+    # Small function for format median (IQR)
+    median.iqr <- function(data, d){  
+      summ <- as.data.frame(quantile(data, prob = c(0.25, 0.5, 0.75)))
+  
+      x <- paste(format(round(summ[[2, 1]], digits = d), nsmall = d), " (", 
+                 format(round(summ[[1, 1]], digits = d), nsmall = d), " - ",
+                 format(round(summ[[3, 1]], digits = d), nsmall = d), ")", sep = "")
+    
+      return(x)
+    }
+  
+    # Small function for format mean (SD)
+    mean.sd <- function(data, d){
+      m <- format(round(mean(data), digits = d), nsmall = d)
+      s <- format(round(sd(data), digits = d), nsmall = d)
+    
+      x <- paste(m, " (", s, ")", sep = "" )
+    
+      return(x)
+    }
+  
+    # Create dataframe
+    dataframe <- as.data.frame(matrix(c(NA, NA, NA, NA, NA), ncol = 1))
+    rownames(dataframe) <- c("Question type", "N", "Age", "Women", "Average bachelor grade")
+    dataframe[1, 1] <- type
+  
+    dataframe[2, 1] <- n
+    dataframe[3, 1] <- mean.sd(top5$age, 1)
+    dataframe[4, 1] <- sex.prop.female
+    dataframe[5, 1] <- median.iqr(top5$avg_grade, 1)
+    
+    return(dataframe)
+  }
+  
+  # MC questions
+  mc <- dem(dat.demo.mc, "MCQ")
+  ov <- dem(dat.demo.ov, "VSAQ")
+  
+  demo <- cbind(mc, ov)
+  
+  return(demo)
+}
+
+### Sturing en stofwisseling
+dat.demo.mc <- filter(ot_ss_data, version == "mc.first") %>% dplyr::select(id, mc01:mc25)
+dat.demo.mc <- dat.demo.mc[rowSums(is.na(dat.demo.mc)) == 0, ]
+
+dat.demo.ov <- filter(ot_ss_data, version == "ov.first") %>% dplyr::select(id, ov01:ov25)
+dat.demo.ov <- dat.demo.ov[rowSums(is.na(dat.demo.ov)) == 0, ]
+
+demo.ss <- demographics("2021-05-19")
+
+### Vraagstukken buik
+dat.demo.mc <- filter(ot_vb_data, version == "mc.first") %>% dplyr::select(id, mc01:mc24)
+dat.demo.mc <- dat.demo.mc[rowSums(is.na(dat.demo.mc)) == 0, ]
+
+dat.demo.ov <- filter(ot_vb_data, version == "ov.first") %>% dplyr::select(id, ov01:ov24)
+dat.demo.ov <- dat.demo.ov[rowSums(is.na(dat.demo.ov)) == 0, ]
+
+demo.vb <- demographics("2021-03-29")
+
+### Combine data
+demo <- cbind(demo.ss, demo.vb)
+colnames(demo) <- c("SS", "SS", "VB", "VB")
+
+kable(demo, caption = "Demographic comparison of top 5% of students who either first made MCQs or VSAQs")
+
+rm(dat.demo.mc, dat.demo.ov, demo.ss, demo.vb, demographics, perdat.dob, perdat.tests, subject_credits)
+
+### We also check whether they are literally the same people
+# Adaptation of function above to get top 5% and their scores 
+top5pc <- function(df){
+    dat.temp <- df %>% mutate(points = rowSums(df) - id)
+    
+    n <- nrow(dat.temp)
+    x <- ceiling(n * 0.05)
+  
+    placeholder <- dat.temp %>% arrange(desc(points), id) %>% slice(1:x) %>% dplyr::select(id, points)
+  
+    # If one of the top 5% high scores was achieved by multiple students, all their demographics should all be included. So we take the 
+    # lowest score in the top 5% (row x) and select everyone with this score or higher.
+    y <- placeholder[[x, 2]]
+  
+    top5 <- filter(dat.temp, points >= y) %>% dplyr::select(id, points)
+    
+    return(top5)
+}
+
+compare.demo <- function(course, max.p){
+    mc <- top5pc(dat.demo.mc) %>% mutate(q = "m")
+    ov <- top5pc(dat.demo.ov) %>% mutate(q = "o")
+    
+    comp <- rbind(mc, ov) %>% arrange(id) %>% group_by(id) %>% mutate(q = ifelse(length(q) == 2, "mo", q)) %>%
+        slice(1L) %>% ungroup()
+    
+    l.mc <- length(mc$id)
+    l.ov <- length(ov$id)
+    
+    # Create table
+    tab <- as.data.frame(matrix(NA, ncol = 3, nrow = 4))
+    colnames(tab) <- c("Group", course, "")
+    tab[, 1] <- c("", "Both", "Only MC", "Only VSAQ")
+    tab[1, 2:3] <- c("n (%)", "score")
+    
+    # Fill in amount of individuals
+    tab[2, 2] <- paste0(c <- length(filter(comp, q == "mo")$id), " (",
+                        ceiling(c/l.mc * 100), "%)", sep = "")
+    tab[3, 2] <- paste0(c <- length(filter(comp, q == "m")$id), " (",
+                        ceiling(c/l.mc * 100), "%)", sep = "")
+    tab[4, 2] <- paste0(c <- length(filter(comp, q == "o")$id), " (",
+                        ceiling(c/l.ov * 100), "%)", sep = "")
+    
+    # Fill in average scores
+    tab[2, 3] <- paste0(ceiling(mean(filter(comp, q == "mo")$points)/max.p * 100), "%", sep = "")
+    tab[3, 3] <- paste0(ceiling(mean(filter(comp, q == "m")$points)/max.p * 100), "%", sep = "")
+    tab[4, 3] <- paste0(ceiling(mean(filter(comp, q == "o")$points)/max.p * 100), "%", sep = "")
+    
+    return(tab)
+}
+
+# Get data for S&S
+dat.demo.mc <- filter(ot_ss_data, version == "mc.first") %>% dplyr::select(id, mc01:mc25)
+dat.demo.mc <- dat.demo.mc[rowSums(is.na(dat.demo.mc)) == 0, ]
+
+dat.demo.ov <- filter(ot_ss_data, version == "ov.first") %>% dplyr::select(id, ov01:ov25)
+dat.demo.ov <- dat.demo.ov[rowSums(is.na(dat.demo.ov)) == 0, ]
+
+# Run function
+tab.ss <- compare.demo("ss", 25)
+
+# Get data for VB
+dat.demo.mc <- filter(ot_vb_data, version == "mc.first") %>% dplyr::select(id, mc01:mc24)
+dat.demo.mc <- dat.demo.mc[rowSums(is.na(dat.demo.mc)) == 0, ]
+
+dat.demo.ov <- filter(ot_vb_data, version == "ov.first") %>% dplyr::select(id, ov01:ov24)
+dat.demo.ov <- dat.demo.ov[rowSums(is.na(dat.demo.ov)) == 0, ]
+
+# Run function
+tab.vb <- compare.demo("vb", 24)
+
+# Join results
+tab <- tab.ss %>% left_join(tab.vb, "Group")
+
+kable(tab, caption = "How many exactly the same people were in both groups?")
+
+```
+
+
+## 2.2. Cueing effects
+```{r}
+#### Positive cueing is when the answer is correct in the MCQ but not in the VSAQ (i.e., student did not actually know the answer)
+#### Negative cueing is when the answer is wrong in the MCQ but correct in the VSAQ (i.e., student was distracted by options)
+
+# Create function to determine cueing
+cueing <- function(question.count){
+  # We create a loop that checks whether cueing occurred. If VSAQ scored a point but MCQ did not, then it is negative cueing, if MCQ scored
+  # a point but VSAQ did not, it is positive cueing. This loop resides in a loop per version.
+  for(x in c("mc.first", "ov.first")){
+    # Create empty dataset for determining the amount of cueing per question (cpq)
+    cpq <- filter(dplyr::select(dat.cueing, id, version), version == "c")
+    colnames(cpq) <- c("pos_cueing", "neg_cueing")
+    
+    # Filter only people from one version
+    dat.temp <- filter(dat.cueing, version == x) 
+    
+    for(i in 3:(question.count + 2)){
+      # Determine the amount of cueing per person (cpp)
+      dat.temp$mc <- dat.temp[, i]
+      dat.temp$ov <- dat.temp[, i + question.count]
+      dat.temp <- dat.temp %>% mutate(pos_cueing = ifelse(mc == 1 & ov == 0, pos_cueing + 1, pos_cueing),
+                                      neg_cueing = ifelse(mc == 0 & ov == 1, neg_cueing + 1, neg_cueing))
+    
+      # Determine the amount of cueing per question (cpq)
+      n <- nrow(dat.temp)
+      q <- i - 2
+    
+      dat.temp.cpq <- dplyr::select(dat.temp,
+                                    paste("mc", ifelse(q >= 10, "", "0"), as.character(q), sep = "" ),
+                                    paste("ov", ifelse(q >= 10, "", "0"), as.character(q), sep = "" ))
+    
+      colnames(dat.temp.cpq) <- c("mc", "ov")
+    
+      dat.temp.cpq <- dat.temp.cpq %>% mutate(pos_cueing = ifelse(mc == 1 & ov == 0, 1, 0),
+                                              neg_cueing = ifelse(mc == 0 & ov == 1, 1, 0))
+    
+      placeholder <- as.data.frame(transpose(list(c(sum(dat.temp.cpq$pos_cueing), 
+                                                    sum(dat.temp.cpq$neg_cueing)))))
+      colnames(placeholder) <- c("pos_cueing", "neg_cueing")
+      rownames(placeholder) <- paste("Question ", as.character(q), sep = "")
+    
+      cpq <- rbind(cpq, placeholder)
+      
+    }
+    
+    # Determine percentages
+    dat.temp <- dat.temp %>% mutate(pos_cueing = (pos_cueing / question.count) * 100,
+                                    neg_cueing = (neg_cueing / question.count) * 100)
+    
+    invisible(capture.output(ifelse(x == "mc.first", dat.temp.mcfirst <- dat.temp %>% dplyr::select(pos_cueing, neg_cueing), 
+                                                     dat.temp.ovfirst <- dat.temp %>% dplyr::select(pos_cueing, neg_cueing))))
+    # % of questions on which was cued
+    n.cpq <- cpq %>% mutate(cued.neg = ifelse(neg_cueing == 0, 0, 1),
+                            cued.pos = ifelse(pos_cueing == 0, 0, 1))
+    
+    n.cpq <- as.data.frame(list(c(sum(n.cpq[["cued.pos"]])),
+                                c(sum(n.cpq[["cued.neg"]])))) %>%
+      rename(cued.pos = 1, cued.neg = 2) %>% mutate(cued.pos = round(cued.pos / question.count * 100),
+                                                    cued.neg = round(cued.neg / question.count * 100))
+
+    invisible(capture.output(ifelse(x == "mc.first", n.cpq.mcfirst <- n.cpq, 
+                                                     n.cpq.ovfirst <- n.cpq)))
+    
+    rm(n.cpq)
+    
+    # % of students that cued per question on average
+    cpq <- cpq %>% mutate(pos_cueing = (pos_cueing / n) * 100,
+                          neg_cueing = (neg_cueing / n) * 100) 
+    
+    invisible(capture.output(ifelse(x == "mc.first", cpq.mcfirst <- cpq, 
+                                                     cpq.ovfirst <- cpq)))
+    
+  }
+  
+  ## Add together n.cpqs
+  n.cpq <- rbind(n.cpq.mcfirst, n.cpq.ovfirst)
+  rownames(n.cpq) <- c("MCQfirst", "VSAQfirst")
+  
+  ## To load results into a dataframe, first create dataframe
+  cpp <- as.data.frame(matrix(c(rep(NA, times = 6)), nrow = 3))
+  cpp[1, ] <- c("mc.first", "ov.first")
+  rownames(cpp) <- c("Version", "Positive cueing", "Negative cueing")
+  
+  cpq <- as.data.frame(matrix(c(rep(NA, times = 10)), nrow = 5))
+  cpq[1, ] <- c("mc.first", "ov.first")
+  rownames(cpq) <- c("Version", "Positive cueing, median (IQR)", "Positive cueing, max", 
+                     "Negative cueing, median (IQR)", "Negative cueing, max")
+  
+  # Small function for format median (IQR)
+  median.iqr <- function(data){  
+    summ <- as.data.frame(quantile(data, prob = c(0.25, 0.5, 0.75)))
+  
+    x <- paste(format(round(summ[[2, 1]], digits = 1), nsmall = 1), "% (", 
+               format(round(summ[[1, 1]], digits = 1), nsmall = 1), "% - ",
+               format(round(summ[[3, 1]], digits = 1), nsmall = 1), "%)", sep = "")
+    
+    return(x)
+  }
+  
+  # Add in information for cpp
+  cpp[2, 1] <- median.iqr(dat.temp.mcfirst$pos_cueing)
+  cpp[3, 1] <- median.iqr(dat.temp.mcfirst$neg_cueing)
+  cpp[2, 2] <- median.iqr(dat.temp.ovfirst$pos_cueing)
+  cpp[3, 2] <- median.iqr(dat.temp.ovfirst$neg_cueing)
+  
+  # Add in information for cpq
+  cpq[2, 1] <- median.iqr(cpq.mcfirst$pos_cueing)
+  cpq[3, 1] <- paste(format(round(max(cpq.mcfirst$pos_cueing), digits = 1), nsmall = 1), "%", sep = "")
+  cpq[4, 1] <- median.iqr(cpq.mcfirst$neg_cueing)
+  cpq[5, 1] <- paste(format(round(max(cpq.mcfirst$neg_cueing), digits = 1), nsmall = 1), "%", sep = "")
+  cpq[2, 2] <- median.iqr(cpq.ovfirst$pos_cueing)
+  cpq[3, 2] <- paste(format(round(max(cpq.ovfirst$pos_cueing), digits = 1), nsmall = 1), "%", sep = "")
+  cpq[4, 2] <- median.iqr(cpq.ovfirst$neg_cueing)
+  cpq[5, 2] <- paste(format(round(max(cpq.ovfirst$neg_cueing), digits = 1), nsmall = 1), "%", sep = "")
+  
+  # Combine cpp and cpq data for export
+  export <- list(cpp, cpq, n.cpq)
+  
+  return(export)
+}
+
+### Sturing en stofwisseling
+# Filter out people who did not answer all questions
+dat.cueing <- ot_ss_data %>% dplyr::select(id, version, mc01:ov25)
+dat.cueing <- dat.cueing[rowSums(is.na(dat.cueing)) == 0, ] %>% mutate(pos_cueing = 0, neg_cueing = 0, mc = NA, ov = NA)
+
+cueing.ss <- cueing(25)
+
+ss.cpp <- cueing.ss[[1]]
+ss.cpq <- cueing.ss[[2]]
+ss.n.cpq <- cueing.ss[[3]]
+
+### Vraagstukken buik
+# Filter out people who did not answer all questions
+dat.cueing <- ot_vb_data %>% dplyr::select(id, version, mc01:ov24)
+dat.cueing <- dat.cueing[rowSums(is.na(dat.cueing)) == 0, ] %>% mutate(pos_cueing = 0, neg_cueing = 0, mc = NA, ov = NA)
+
+cueing.vb <- cueing(24)
+
+vb.cpp <- cueing.vb[[1]]
+vb.cpq <- cueing.vb[[2]]
+vb.n.cpq <- cueing.vb[[3]]
+
+# Join results
+cpp <- cbind(ss.cpp, vb.cpp)
+colnames(cpp) <- c("SS", "SS", "VB", "VB")
+
+cpq <- cbind(ss.cpq, vb.cpq)
+colnames(cpq) <- c("SS", "SS", "VB", "VB")
+
+n.cpq <- cbind(ss.n.cpq, vb.n.cpq)
+colnames(n.cpq) <- c("Pos.cueing SS", "Neg.cueing SS", "Pos.cueing VB", "Neg.cueing VB")
+
+kable(cpp, caption = "Cueing per person")
+kable(cpq, caption = "Cueing per question")
+kable(n.cpq, caption = "Cueing on item level")
+
+```
+
+
+## 2.3. Constructive alignment
+```{r} 
+# First determine constructive alignment in historical cohort. This requires manual input of data from GOES questionnaires.
+# Relevant questions:
+# 1: De toetsing als geheel (vorm en inhoud) sluit goed aan bij wat je aan het einde van het blok dient te beheersen
+# 2: De toetsing is een goede afspiegeling van de totale inhoud van het blok
+# We don't use 2016-2017 for question 1 because it was too different in that year.
+# For each question we want per year: n, mean, median, sd.
+
+#### Using processed data ####
+##### Sturing en stofwisseling #####
+goes_ss_1 <- as.data.frame(cbind(c(NA, 50, 63, 149), c(NA, 3.3, 3.1, 2.2), c(NA, 3.0, 3.0, 2.0),
+                                 c(NA, 1.1, 1.2, 1.1), c("2016/2017", "2017/2018", "2018/2019", "2020/2021")))
+goes_ss_2 <- as.data.frame(cbind(c(197, 50, 62, 149), c(3.6, 3.2, 2.9, 2.2), c(4.0, 3.5, 3.0, 2.0),
+                                 c(0.9, 1.1, 1.2, 1.1), c("2016/2017", "2017/2018", "2018/2019", "2020/2021")))
+colnames(goes_ss_1) <- c("n", "mean", "median", "sd", "Cohort")
+colnames(goes_ss_2) <- c("n", "mean", "median", "sd", "Cohort")
+
+goes_ss_1 <- goes_ss_1 %>% mutate(n = as.numeric(n), mean = as.numeric(mean), median = as.numeric(median), sd = as.numeric(sd)) %>%
+  mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = 1)
+goes_ss_2 <- goes_ss_2 %>% mutate(n = as.numeric(n), mean = as.numeric(mean), median = as.numeric(median), sd = as.numeric(sd)) %>%
+  mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = 2)
+
+### Figure
+# Theme function
+theme_min <- function(){
+    theme(plot.title = element_text(hjust = 0.5),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(size = 0.5, linetype = "solid", colour = "black"))
+}
+
+setwd("~/Research/[] Medical Education/1. VSAQs/Figures/GOES/")
+
+ss1 <- ggplot(data = goes_ss_1, aes(x = Cohort, y = mean, group = question)) + geom_point() +
+  geom_errorbar(aes(ymin = ll, ymax = ul), width = 0.2) + ylim(1, 5) + geom_line(na.rm = TRUE) + theme_min() +
+  labs(title = "Assessment and intended learning outcomes") + ylab("Mean score") +
+  annotate("text", label = "          A" , x = 0, y = 5, fontface = "bold", size = 5)
+ss2 <- ggplot(data = goes_ss_2, aes(x = Cohort, y = mean, group = question)) + geom_point() +
+  geom_errorbar(aes(ymin = ll, ymax = ul), width = 0.2) + ylim(1, 5) + geom_line(na.rm = TRUE) + theme_min() +
+  labs(title = "Reflection of course contents in assessment") + ylab("Mean score") +
+  annotate("text", label = "          B" , x = 0, y = 5, fontface = "bold", size = 5)
+ss <- plot_grid(plotlist = list(ss1, ss2), ncol = 1)
+
+ss
+
+ggsave("ss.tiff", width = 5, height = 7.5, dpi = 600)
+ggsave("ss.png", width = 5, height = 7.5, dpi = 600)
+
+##### Vraagstukken Buik #####
+goes_vb_1 <- as.data.frame(cbind(c(NA, 66, 62, 127), c(NA, 3.6, 2.2, 2.9), c(NA, 4.0, 2.0, 3.0),
+                                 c(NA, 1.0, 1.1, 1.1), c("2016/2017", "2017/2018", "2018/2019", "2020/2021")))
+goes_vb_2 <- as.data.frame(cbind(c(170, 66, 62, 127), c(3.6, 3.5, 2.2, 3.1), c(4.0, 4.0, 2.0, 3.0),
+                                 c(0.9, 0.7, 1.1, 1.1), c("2016/2017", "2017/2018", "2018/2019", "2020/2021")))
+colnames(goes_vb_1) <- c("n", "mean", "median", "sd", "Cohort")
+colnames(goes_vb_2) <- c("n", "mean", "median", "sd", "Cohort")
+
+goes_vb_1 <- goes_vb_1 %>% mutate(n = as.numeric(n), mean = as.numeric(mean), median = as.numeric(median), sd = as.numeric(sd)) %>%
+  mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = 1)
+goes_vb_2 <- goes_vb_2 %>% mutate(n = as.numeric(n), mean = as.numeric(mean), median = as.numeric(median), sd = as.numeric(sd)) %>%
+  mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = 2)
+
+### Figure
+vb1 <- ggplot(data = goes_vb_1, aes(x = Cohort, y = mean, group = question)) + geom_point() +
+  geom_errorbar(aes(ymin = ll, ymax = ul), width = 0.2) + ylim(1, 5) + geom_line(na.rm = TRUE) + theme_min() +
+  labs(title = "Assessment and intended learning outcomes") + ylab("Mean score") +
+  annotate("text", label = "          A" , x = 0, y = 5, fontface = "bold", size = 5)
+vb2 <- ggplot(data = goes_vb_2, aes(x = Cohort, y = mean, group = question)) + geom_point() +
+  geom_errorbar(aes(ymin = ll, ymax = ul), width = 0.2) + ylim(1, 5) + geom_line(na.rm = TRUE) + theme_min() +
+  labs(title = "Reflection of course contents in assessment") + ylab("Mean score") +
+  annotate("text", label = "          B" , x = 0, y = 5, fontface = "bold", size = 5)
+vb <- plot_grid(plotlist = list(vb1, vb2), ncol = 1)
+
+vb
+
+ggsave("vb.tiff", width = 5, height = 7.5, dpi = 600)
+ggsave("vb.png", width = 5, height = 7.5, dpi = 600)
+
+### Table
+# In dat, the first set of questions is SS, the second is VB.
+dat <- rbind(goes_ss_1, goes_ss_2, goes_vb_1, goes_vb_2) %>%
+  mutate(ul = as.character(round(ul, digits = 1)),
+         ll = as.character(round(ll, digits = 1)),
+         ul = ifelse(nchar(ul) == 1, paste(ul, ".0", sep = ""), ul),
+         ll = ifelse(nchar(ll) == 1, paste(ll, ".0", sep = ""), ll),
+         input = ifelse(is.na(mean), NA, paste0(mean, " (", sd, ")", sep = "")))
+
+table <- matrix(NA, ncol = 8, nrow = 6)
+colnames(table) <- c(rep("SS", times = 4), rep("VB", times = 4))
+rownames(table) <- c("Question", "Measure", "2016/2017", "2017/2018", "2018/2019", "2020/2021")
+table[1, ] <- c("Q1", "Q1", "Q2", "Q2")
+table[2, ] <- c("n", "mean")
+
+n <- 0
+o <- 0
+
+for(c in 1:8){
+  if(c %% 2 != 0){
+    table[3, c] <- dat$n[[1 + n]]
+    table[4, c] <- dat$n[[2 + n]]
+    table[5, c] <- dat$n[[3 + n]]
+    table[6, c] <- dat$n[[4 + n]]
+    n <- n + 4
+  }
+
+  else{
+    table[3, c] <- dat$input[[1 + o]]
+    table[4, c] <- dat$input[[2 + o]]
+    table[5, c] <- dat$input[[3 + o]]
+    table[6, c] <- dat$input[[4 + o]]
+    o <- o + 4
+  }
+}
+
+kable(table)
+
+rm(goes_ss_1, goes_ss_2, ss1, ss2, ss, goes_vb_1, goes_vb_2, vb1, vb2, vb, c, o, n)
+
+```
+
+
+## 2.4. Evaluative questions in the GOES
+``` {r}
+# Questions:
+# 1: Omdat ik wist dat ik getoetst zou worden met open vragen met kort antwoord (OVKA) heb ik anders gestudeerd dan ik zou studeren voor een
+# toets met meerkeuze vragen.
+# 2: Door het gebruik van open vragen met kort antwoord (OVKA) was de toets een betere representatie van wat ik heb geleerd in dit blok, ten 
+# opzichte van een toets die met name meerkeuzevragen gebruikt.
+
+
+### Using processed data
+# # Get information from SS in order n, mean, median, sd
+# ssev1 <- as.data.frame(matrix(c(147, 3.0, 3.0, 1.2), nrow = 1))
+# ssev2 <- as.data.frame(matrix(c(148, 1.7, 1.0, 0.9), nrow = 1))
+# colnames(ssev1) <- c("n", "mean", "median", "sd")
+# colnames(ssev2) <- c("n", "mean", "median", "sd")
+# 
+# ssev1 <- ssev1 %>% mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = " Q1 ", course = "SS")
+# ssev2 <- ssev2 %>% mutate(ul = mean + (1.96 * (sd/sqrt(n))), ll = mean - (1.96 * (sd/sqrt(n))), question = " Q2 ", course = "SS")
+
+### Using original data
+## Read data
+goes_ss <- read.csv("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/GOES SS.csv", sep=";") %>% 
+    rename(ev1 = Omdat.ik.wist.dat.ik.getoetst.zou.worden.met.open.vragen.met.korte.antwoord..OVKA..heb.ik.anders.gestudeerd.dan.ik.zou.studeren.voor.een.toets.met.meerkeuze.vragen,
+           ev2 = Door.het.gebruik.van.open.vragen.met.kort.antwoord..OVKA..was.de.toets.een.betere.representatie.van.wat.ik.heb.geleerd.in.dit.blok..ten.opzichte.van.een.toets.die.name.meerkeuzevragen.gebruik) %>%
+    dplyr::select(ev1, ev2) 
+
+
+# Get information from VB. These were not put into the GOES so we asked them later and now export the relevant information ourselves
+vbev <- suppressMessages(read_csv("~/Datasets/OVKA2021/Aanvulling op GOES Vraagstukken Buik.csv"))[, 2:3]
+colnames(vbev) <- c("ev1", "ev2")
+
+vbev <- vbev %>%
+  mutate(ev1 = ifelse(ev1 == "Geheel mee oneens", 1, 
+                      ifelse(ev1 == "Enigszins mee oneens", 2, 
+                             ifelse(ev1 == "Neutraal", 3,
+                                    ifelse(ev1 == "Enigszins mee eens", 4,
+                                           ifelse(ev1 == "Geheel mee eens", 5, NA))))),
+         ev2 = ifelse(ev2 == "Geheel mee oneens", 1, 
+                      ifelse(ev2 == "Enigszins mee oneens", 2, 
+                             ifelse(ev2 == "Neutraal", 3,
+                                    ifelse(ev2 == "Enigszins mee eens", 4,
+                                           ifelse(ev2 == "Geheel mee eens", 5, NA))))))
+
+# Function
+evs <- function(df, course){
+    ev.1 <- dplyr::select(df, ev1) %>% filter(!is.na(ev1))
+    ev.2 <- dplyr::select(df, ev2) %>% filter(!is.na(ev2))
+    
+    n.1 <- length(ev.1$ev1)
+    n.2 <- length(ev.2$ev2)
+    
+    dat.1 <- as.data.frame(prop.table(table(ev.1))) %>% mutate(prop = round(Freq * 100)) %>% rename(answer = ev.1) %>%
+        dplyr::select(answer, prop)
+    dat.2 <- as.data.frame(prop.table(table(ev.2))) %>% mutate(prop = round(Freq * 100)) %>% rename(answer = ev.2) %>%
+        dplyr::select(answer, prop)
+    
+    for(i in 1:5){
+        if(!(i %in% dat.1$answer)){
+            dat.1 <- rbind(dat.1, as.data.frame(cbind(as.character(i), 0)) %>% rename(answer = 1, prop = V2)) %>% 
+                arrange(answer)
+        }
+        
+        if(!(i %in% dat.2$answer)){
+            dat.2 <- rbind(dat.2, as.data.frame(cbind(as.character(i), 0)) %>% rename(answer = 1, prop = V2)) %>% 
+                arrange(answer)
+        }
+    }
+    
+    res.1 <- paste0(summary(ev.1$ev1)[[2]], " (",
+                    summary(ev.1$ev1)[[3]], "-",
+                    summary(ev.1$ev1)[[5]], ")")
+    
+    res.2 <- paste0(summary(ev.2$ev2)[[2]], " (",
+                    summary(ev.2$ev2)[[3]], "-",
+                    summary(ev.2$ev2)[[5]], ")")
+    
+    tab.1 <- rbind(dat.1, as.data.frame(cbind("median", res.1)) %>% rename(answer = V1, prop = res.1))
+    tab.2 <- rbind(dat.2, as.data.frame(cbind("median", res.2)) %>% rename(answer = V1, prop = res.2))
+    
+    tab <- cbind(tab.1, tab.2)[, c(1:2, 4)]
+    colnames(tab) <- c("Answer", paste0("EV1 ", course, " (n = ", n.1, ")"), paste0("EV2 ", course, " (n = ", n.2, ")"))
+    
+    return(tab)
+}
+
+tab.ss <- evs(goes_ss, "SS")
+tab.vb <- evs(vbev, "VB")
+
+tab <- tab.ss %>% left_join(tab.vb, "Answer")
+tab[, 1] <- c("Completely disagree", "Disagree", "Neutral", "Agree", "Completely agree", "Median (IQR)")
+
+kable(tab)
+
+rm(tab.ss, tab.vb, tab, evs)
+
+```
+
+
+## 2.5. Evaluative questions in the practice assessment
+```{r}
+# Load in recoded evaluative questions for S&S
+# ev_questions_ss <- readxl::read_excel("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/evssa.xlsx") %>%
+#     dplyr::select(studentnr, vraag, antwoord) %>% rename(score = antwoord)
+# load("~/Datasets/OVKA2021/Dataframes/ss_key.Rdata")
+# ev_questions_ss <- filter(ev_questions_ss, studentnr %in% (ot_ss_data %>% left_join(ss_key, "id"))$studentnr) %>%
+#   mutate(ev = paste0("ev", vraag)) %>% arrange(vraag) %>% dplyr::select(-vraag)
+# ev_questions_ss <- ev_questions_ss %>% arrange(studentnr, ev) %>% group_by(studentnr, ev) %>% slice(1L) %>% ungroup() %>% arrange(ev) %>%
+#     filter(!is.na(score) & score != 0)
+# ev_ss <- split(ev_questions_ss, ev_questions_ss$ev)
+# ev_ss <- cbind(ev_ss[[1]]$score, ev_ss[[2]]$score, ev_ss[[3]]$score, ev_ss[[4]]$score, ev_ss[[5]]$score,
+#                ev_ss[[6]]$score, ev_ss[[7]]$score, ev_ss[[8]]$score, ev_ss[[9]]$score)
+# ev_ss_mcfirst <- as.data.frame(ev_ss) %>% mutate(version = "mc.first")
+# colnames(ev_ss_mcfirst) <- c("ev01", "ev02", "ev03", "ev04", "ev05", "ev06", "ev07", "ev08", "ev09", "version")
+# save(ev_ss_mcfirst, file = "~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+# 
+# ev_questions_ss <- readxl::read_excel("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/evssb.xlsx") %>%
+#     dplyr::select(studentnr, vraag, antwoord) %>% rename(score = antwoord)
+# ev_questions_ss <- filter(ev_questions_ss, studentnr %in% (ot_ss_data %>% left_join(ss_key, "id"))$studentnr) %>%
+#   mutate(ev = paste0("ev", vraag)) %>% arrange(vraag) %>% dplyr::select(-vraag)
+# ev_questions_ss <- ev_questions_ss %>% arrange(studentnr, ev) %>% group_by(studentnr, ev) %>% slice(1L) %>% ungroup() %>% arrange(ev) %>%
+#     filter(!is.na(score) & score != 0)
+# ev_ss <- split(ev_questions_ss, ev_questions_ss$ev)
+# ev_ss <- cbind(ev_ss[[1]]$score, ev_ss[[2]]$score, ev_ss[[3]]$score, ev_ss[[4]]$score, ev_ss[[5]]$score,
+#                ev_ss[[6]]$score, ev_ss[[7]]$score, ev_ss[[8]]$score, ev_ss[[9]]$score)
+# ev_ss_ovfirst <- as.data.frame(ev_ss) %>% mutate(version = "ov.first")
+# colnames(ev_ss_ovfirst) <- c("ev01", "ev02", "ev03", "ev04", "ev05", "ev06", "ev07", "ev08", "ev09", "version")
+# save(ev_ss_ovfirst, file = "~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+
+### Get ss data
+load("~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+load("~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+ev_ss_data <- rbind(ev_ss_mcfirst, ev_ss_ovfirst)
+
+# Add marks for ev04 because answers 0 are actually 0 points for answers which are not integers
+marks0 <- readxl::read_excel("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/cijfers evaluatievraag 4.xlsx")
+marks0ss <- filter(marks0, Blok == "SS") %>% mutate(version = ifelse(Versie == "A", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+marks0vb <- filter(marks0, Blok == "VB" )%>% mutate(version = ifelse(Versie == "B", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+
+### Get function for figures
+plot <- function(df, course, labs_grid){
+    # Get data
+    mcfirst <- filter(df, version == "mc.first") %>% dplyr::select(ev01:ev09)
+    ovfirst <- filter(df, version == "ov.first") %>% dplyr::select(ev01:ev09)
+    
+    if(course == "vb"){
+      marks0_add <- marks0vb
+    }
+    
+    else{
+      marks0_add <- marks0ss
+    }
+    
+    dat <- tibble(answer = as.character(), prop = as.numeric(), ev = as.character())
+    n <- 1
+    
+    for(d in list("mcfirst", "ovfirst")){
+        for(i in 1:3){
+             dat.temp <- get(d)
+          
+             vector <- dat.temp[, i]
+             vector <- ifelse(vector == 0, NA, vector)
+             
+             ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                                ifelse(vector == 0.02, "Disagree",
+                                                                                ifelse(vector == 0.03, "Neutral",
+                                                                                ifelse(vector == 0.04, "Agree",
+                                                                                ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                       prop = round(Freq * 100, digits = 0)) %>%
+                 filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", d, ".", i, sep = ""),
+                                                                                   sort_ind = n)
+             
+             dat <- rbind(dat, ph) 
+             n <- n + 1
+        }
+    }
+    
+    for(i in 5:9){
+      dat.temp <- df %>% dplyr::select(ev01:ev09)
+      
+      vector <- dat.temp[, i]
+      vector <- ifelse(vector == 0, NA, vector)
+             
+      ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                         ifelse(vector == 0.02, "Disagree",
+                                                                         ifelse(vector == 0.03, "Neutral",
+                                                                         ifelse(vector == 0.04, "Agree",
+                                                                         ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                prop = round(Freq * 100, digits = 0)) %>%
+        filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", i, sep = ""),
+                                                                          sort_ind = n)
+             
+      dat <- rbind(dat, ph) 
+      n <- n + 1
+    }
+      
+    dat <- rbind(dat, data.frame(answer = NA, prop = NA, ev = "space1", sort_ind = 2.5), 
+                      data.frame(answer = NA, prop = NA, ev = "space2", sort_ind = 4.5),
+                      data.frame(answer = NA, prop = NA, ev = "space3", sort_ind = 6.5))
+    dat <- dat %>% mutate(ev = factor(ev, levels = c("EQ.mcfirst.1", "EQ.ovfirst.1", "space1", "EQ.mcfirst.2", "EQ.ovfirst.2", "space2",
+                                                     "EQ.mcfirst.3", "EQ.ovfirst.3", "space3",
+                                                     "EQ.5", "EQ.6", "EQ.7", "EQ.8", "EQ.9")),
+                          answer = factor(answer, levels = c("Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"))) %>%
+      dplyr::select(ev, answer, prop, sort_ind) %>% arrange(ev, answer)
+    
+    # Main plot
+    plot_bar <- ggplot(data = dat, aes(fill = answer, x = ev, y = prop)) +
+      geom_bar(position = "fill", stat = "identity") + 
+      geom_vline(xintercept = 3, linetype = "dashed") + geom_vline(xintercept = 6, linetype = "dashed") +
+      geom_vline(xintercept = 9, linetype = "dashed") +
+      scale_y_continuous(expand = c(0, 0), labels = c("0", "25", "50", "75", "100")) +
+      scale_x_discrete(labels = c("MCQs", "VSAQs", "", "MCQs", "VSAQs", "", "MCQs", "VSAQS", "", "EQ5", "EQ6", "EQ7", "EQ8", "EQ9")) +
+      scale_fill_manual(values = c("#648FFF", "#785EF0", "#DC267F", "#FE6100", "#FFB000")) +
+      xlab("") + ylab("Percentage (%)") + guides(fill = guide_legend(reverse = TRUE)) +
+      theme_min() +
+      theme(legend.position = "top",
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.5, 0, -2, 1), "cm"))
+    
+    # Data for labels
+    dat.lab <- data.frame(x = c(1.5, 4.5, 7.5, 12),
+                          lab = c("EQ1", "EQ2", "EQ3", "End of test"))
+    
+    # Plot for labels
+    plot_label <- ggplot() +
+      annotate("text", x = dat.lab$x, y = 0.25, label = dat.lab$lab) + xlab("") + ylab("") + xlim(1, 14) +
+      theme(plot.background = element_blank(),
+            plot.title = element_blank(),
+            plot.margin = unit(c(-1, 0, -1, 1), "cm"),
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid = element_blank())
+    
+    # barplot <- cowplot::plot_grid(plot_bar, NULL, plot_label, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    ## Create histogram for EQ4
+    dat.mcfirst <- dplyr::select(mcfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.mcfirst <- rbind(dat.mcfirst, filter(marks0_add, version == "mc.first") %>% dplyr::select(ev04))
+    
+    dat.ovfirst <- dplyr::select(ovfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.ovfirst <- rbind(dat.ovfirst, filter(marks0_add, version == "ov.first") %>% dplyr::select(ev04))
+    
+    dat.ev4 <- rbind(dat.mcfirst %>% mutate(version = "mcfirst"),
+                     dat.ovfirst %>% mutate(version = "ovfirst"))
+    
+    plot_hist <- function(data_hist, lab){
+      hist <- ggplot(data_hist, aes(x = ev04)) +
+        geom_histogram(binwidth = 1, colour = "black", fill = "#648FFF") + xlab("EQ4") +ylab("") +
+        scale_x_continuous(limits = c(1, 10), breaks = seq(1, 10, 1)) +
+        scale_y_continuous(expand = c(0, 0)) +
+        theme(plot.background = element_blank(),
+              plot.margin = unit(c(0.5, 0, -2, 0), "cm"),
+              panel.background = element_blank(),
+              panel.grid = element_blank(),
+              plot.title = element_blank(),
+              axis.line.y = element_blank(),
+              axis.text.y = element_blank(),
+              axis.ticks.y = element_blank(),
+              axis.line.x = element_line(colour = "black", linetype = "solid"))
+      
+      return(hist)
+    }
+
+    # Label for plot histograms
+    plot_label.histmc <- ggplot() +
+      annotate("text", x = 5.5, y = 0.25, label = "First MCQs") + xlab("") + ylab("") + xlim(1, 10) +
+      theme(plot.background = element_blank(),
+            plot.title = element_blank(),
+            plot.margin = unit(c(-1, 0, -1, 0), "cm"),
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid = element_blank())
+      
+    plot_label.histov <- ggplot() +
+      annotate("text", x = 5.5, y = 0.25, label = "First VSAQs") + xlab("") + ylab("") + xlim(1, 10) +
+      theme(plot.background = element_blank(),
+            plot.title = element_blank(),
+            plot.margin = unit(c(-1, 0, -1, 0), "cm"),
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid = element_blank())
+    
+     # hist.final <- cowplot::plot_grid(hist, NULL, plot_label.hist, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    plot_hist.mcfirst <- plot_hist(dat.mcfirst)
+    plot_hist.ovfirst <- plot_hist(dat.ovfirst)
+    
+    final_plot <- cowplot::plot_grid(plot_bar, plot_hist.mcfirst, plot_hist.ovfirst, 
+                                     NULL, NULL, NULL, 
+                                     plot_label, plot_label.histmc, plot_label.histov,
+                                     nrow = 3, ncol = 3, align = "hv", axis = "tlbr",
+                                     rel_heights = c(6, 0, 1), rel_widths = c(2, 1, 1), labels = labs_grid)
+    
+    return(list(dat, final_plot, dat.ev4))
+}
+                                                                                   
+dat.ss <- plot(df = ev_ss_data, course = "ss", labs_grid = c("A", "B", "C"))[[2]]    
+dat.vb <- plot(df = as.data.frame(ot_vb_data), course = "vb", labs_grid = c("D", "E", "F"))[[2]] 
+# ot_vb_data is a tibble and the code works only for dataframes due to vector extraction
+
+# Save figures
+plot_final <- cowplot::plot_grid(dat.ss, dat.vb, ncol = 1, align = "hv", axis = "tlbr", rel_heights = c(1, 1))
+ggsave("evplot_ver1.png", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+ggsave("evplot_ver1.tiff", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+
+### Get data as table as well
+dat.ss <- plot(ev_ss_data, "ss", labs_grid = c("A", "B", "C"))[[1]]
+dat.vb <- plot(as.data.frame(ot_vb_data), "vb", labs_grid = c("D", "E", "F"))[[1]] 
+
+# Median and IQR for ev04
+dat.ss.ev04 <- plot(ev_ss_data, "ss", labs_grid = c("A", "B", "C"))[[3]]
+dat.vb.ev04 <- plot(as.data.frame(ot_vb_data), "vb", labs_grid = c("D", "E", "F"))[[3]] 
+
+tab.ev04 <- as.data.frame(matrix(NA, ncol = 3, nrow = 2))
+colnames(tab.ev04) <- c(".", "SS", "VB")
+tab.ev04[, 1] <- c("MCQs first", "VSAQs first")
+
+miqr <- function(df, ver){
+  dat <- df %>% filter(version == ver)
+  dat <- dat[, 1]
+  dat <- summary(dat)
+  q1 <- round(dat[[2]])
+  med <- round(dat[[3]])
+  q3 <- round(dat[[5]])
+  
+  return(paste0(med, " (", q1, "-", q3, ")", sep = ""))
+}
+
+tab.ev04[1, 2] <- miqr(dat.ss.ev04, "mcfirst")
+tab.ev04[2, 2] <- miqr(dat.ss.ev04, "ovfirst")
+tab.ev04[1, 3] <- miqr(dat.vb.ev04, "mcfirst")
+tab.ev04[2, 3] <- miqr(dat.vb.ev04, "ovfirst")
+
+kable(tab.ev04, caption = "Median (IQR) for ev04")
+
+# Function to add proportions into table
+f <- function(){
+  dat.ph <- data.frame(answer = c("Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"))
+
+  for(i in c(1:2, 4:5, 7:8, 10:14)){
+    x <- ph[[i]] %>% dplyr::select(answer, prop)
+    colnames(x) <- c("answer", as.character(t(ph[[i]])[1, 1]))
+    
+    dat.ph <- dat.ph %>% left_join(x, "answer")
+  }
+
+  return(dat.ph)
+}
+  
+## Start prepare data
+# SS
+ph <- split(dat.ss, dat.ss$ev)
+dat.ss <- rbind(cbind(answer = "SS", EQ.mcfirst.1 = "SS", EQ.mcfirst.2 = "SS", EQ.mcfirst.3 = "SS", EQ.ovfirst.1 = "SS", 
+                      EQ.ovfirst.2 = "SS", EQ.ovfirst.3 = "SS", EQ.5 = "SS", EQ.6 = "SS", EQ.7 = "SS", EQ.8 = "SS", EQ.9 = "SS"),
+                f())
+
+# VB
+ph <- split(dat.vb, dat.vb$ev)
+dat.vb <- rbind(cbind(answer = "VB", EQ.mcfirst.1 = "VB", EQ.mcfirst.2 = "VB", EQ.mcfirst.3 = "VB", EQ.ovfirst.1 = "VB", 
+                      EQ.ovfirst.2 = "VB", EQ.ovfirst.3 = "VB", EQ.5 = "VB", EQ.6 = "VB", EQ.7 = "VB", EQ.8 = "VB", EQ.9 = "VB"),
+                f())
+
+dat <- rbind(dat.ss, dat.vb)
+colnames(dat) <- c("Answer", "EQ1 after first MCQs", "EQ2 after first MCQs", "EQ3 after first MCQs",
+                             "EQ1 after first VSAQs", "EQ2 after first VSAQs", "EQ3 after first VSAQs",
+                   "EQ5", "EQ6", "EQ7", "EQ8", "EQ9")
+
+for(i in 2:length(dat)){
+  dat[, i] <- ifelse(is.na(dat[, i]), 0, dat[, i])
+}
+
+for(c in 2:length(dat)){
+  for(r in c(2:6, 8:12)){
+    dat[r, c] <- paste0(dat[r, c], "%", sep = "")
+  }
+}
+
+kable(dat, caption = "Distribution of answers given to evaluative questions in the practice assessment")
+
+### Also get table with median (IQR)
+# Function to get median and IQR
+miqr <- function(vec){
+  res <- paste0(round(median(vec, na.rm = TRUE), digits = 0), " (",
+                round(summary(vec)[[2]], digits = 0), "-",
+                round(summary(vec)[[5]], digits = 0), ")", sep = "")
+  return(res)
+}
+
+# Function to get table
+tab.med <- function(df, course){
+  dat.temp <- df %>% dplyr::select(ev01:ev09, version)
+  
+  for(i in 1:9){
+    dat.temp[, i] <- dat.temp[, i] * 100
+  }
+  
+  mcfirst <- filter(dat.temp, version == "mc.first") %>% dplyr::select(ev01:ev09)
+  ovfirst <- filter(dat.temp, version == "ov.first") %>% dplyr::select(ev01:ev09)
+  
+  
+  col.mcfirst <- rbind(
+    miqr(mcfirst$ev01),
+    miqr(mcfirst$ev02),
+    miqr(mcfirst$ev03)
+  )
+  
+  col.ovfirst <- rbind(
+    miqr(ovfirst$ev01),
+    miqr(ovfirst$ev02),
+    miqr(ovfirst$ev03)
+  )
+
+  col.otherev <- rbind(
+    miqr(dat.temp$ev05),
+    miqr(dat.temp$ev06),
+    miqr(dat.temp$ev07),
+    miqr(dat.temp$ev08),
+    miqr(dat.temp$ev09)
+  )
+  
+  col.filler <- rbind(NA, NA, NA, NA, NA)
+  
+  tab.part1 <- cbind(col.mcfirst, col.ovfirst)
+  tab.part2 <- cbind(col.otherev, col.filler)
+  tab <- rbind(c("First MCQs", "First VSAQs"), tab.part1, tab.part2)
+  colnames(tab) <- c(course, course)
+  rownames(tab) <- c("Version", "EQ1", "EQ2", "EQ3", "EQ5", "EQ6", "EQ7", "EQ8", "EQ9")
+  
+  return(tab)
+}
+
+dat.ss <- tab.med(ev_ss_data, "SS")
+dat.vb <- tab.med(ot_vb_data, "VB")
+
+dat <- cbind(dat.ss, dat.vb)
+
+kable(dat, caption = "Median answer on the Likert scale for evaluative questions in the practice assessment")
+
+``` 
+
+
+## 2.6. Different figure layouts
+### 2.6.1. Histograms above each other
+```{r}
+### Get ss data
+load("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+load("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+ev_ss_data <- rbind(ev_ss_mcfirst, ev_ss_ovfirst)
+
+theme_min <- function(){
+    theme(plot.title = element_text(hjust = 0.5),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(size = 0.5, linetype = "solid", colour = "black"))
+}
+
+# Add marks for ev04 because answers 0 are actually 0 points for answers which are not integers
+marks0 <- readxl::read_excel("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Spreadsheets/cijfers evaluatievraag 4.xlsx")
+marks0ss <- filter(marks0, Blok == "SS") %>% mutate(version = ifelse(Versie == "A", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+marks0vb <- filter(marks0, Blok == "VB" )%>% mutate(version = ifelse(Versie == "B", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+
+### Get function for figures
+plot <- function(df, course, labs_grid){
+    # Get data
+    mcfirst <- filter(df, version == "mc.first") %>% dplyr::select(ev01:ev09)
+    ovfirst <- filter(df, version == "ov.first") %>% dplyr::select(ev01:ev09)
+    
+    if(course == "vb"){
+      marks0_add <- marks0vb
+    }
+    
+    else{
+      marks0_add <- marks0ss
+    }
+    
+    dat <- tibble(answer = as.character(), prop = as.numeric(), ev = as.character())
+    n <- 1
+    
+    for(d in list("mcfirst", "ovfirst")){
+        for(i in 1:3){
+             dat.temp <- get(d)
+          
+             vector <- dat.temp[, i]
+             vector <- ifelse(vector == 0, NA, vector)
+             
+             ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                                ifelse(vector == 0.02, "Disagree",
+                                                                                ifelse(vector == 0.03, "Neutral",
+                                                                                ifelse(vector == 0.04, "Agree",
+                                                                                ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                       prop = round(Freq * 100, digits = 0)) %>%
+                 filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", d, ".", i, sep = ""),
+                                                                                   sort_ind = n)
+             
+             dat <- rbind(dat, ph) 
+             n <- n + 1
+        }
+    }
+    
+    for(i in 5:9){
+      dat.temp <- df %>% dplyr::select(ev01:ev09)
+      
+      vector <- dat.temp[, i]
+      vector <- ifelse(vector == 0, NA, vector)
+             
+      ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                         ifelse(vector == 0.02, "Disagree",
+                                                                         ifelse(vector == 0.03, "Neutral",
+                                                                         ifelse(vector == 0.04, "Agree",
+                                                                         ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                prop = round(Freq * 100, digits = 0)) %>%
+        filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", i, sep = ""),
+                                                                          sort_ind = n)
+             
+      dat <- rbind(dat, ph) 
+      n <- n + 1
+    }
+      
+    dat <- rbind(dat, data.frame(answer = NA, prop = NA, ev = "space1", sort_ind = 2.5), 
+                      data.frame(answer = NA, prop = NA, ev = "space2", sort_ind = 4.5),
+                      data.frame(answer = NA, prop = NA, ev = "space3", sort_ind = 6.5))
+    dat <- dat %>% mutate(ev = factor(ev, levels = c("EQ.mcfirst.1", "EQ.ovfirst.1", "space1", "EQ.mcfirst.2", "EQ.ovfirst.2", "space2",
+                                                     "EQ.mcfirst.3", "EQ.ovfirst.3", "space3",
+                                                     "EQ.5", "EQ.6", "EQ.7", "EQ.8", "EQ.9")),
+                          answer = factor(answer, levels = c("Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"))) %>%
+      dplyr::select(ev, answer, prop, sort_ind) %>% arrange(ev, answer)
+    
+    # Main plot
+    plot_bar <- ggplot(data = dat, aes(fill = answer, x = ev, y = prop)) +
+      geom_bar(position = "fill", stat = "identity", colour = "black") + 
+      geom_vline(xintercept = 3, linetype = "dashed") + geom_vline(xintercept = 6, linetype = "dashed") +
+      geom_vline(xintercept = 9, linetype = "dashed") +
+      scale_y_continuous(expand = c(0, 0), labels = c("0", "25", "50", "75", "100")) +
+      scale_x_discrete(labels = c("1. Representation MCQs", "1. Representation VSAQs", "", "2. Difficulty MCQs", "2. Difficulty VSAQs", "", 
+                                  "3. Uncertainty MCQs", "3. Uncertainty VSAQS", "", "5. Easier", "6. Clinical practice", 
+                                  "7. Learning strategy", "8. Preparation", "9. Alignment")) +
+      scale_fill_manual(values = c("#F8F9FA", "#DEE2E6", "#ADB5BD", "#495057", "#212529")) +
+      xlab("") + ylab("Percentage (%)") + guides(fill = guide_legend(reverse = TRUE)) +
+      theme_min() +
+      theme(legend.position = "top",
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.5, 0, 0, 1), "cm"),
+            axis.text.x = element_text(angle = 60, hjust = 1, size = 10))
+    # 
+    # # Data for labels
+    # dat.lab <- data.frame(x = c(1.5, 4.5, 7.5, 12),
+    #                       lab = c("", "", "", ""))
+    # 
+    # # Plot for labels
+    # plot_label <- ggplot() +
+    #   annotate("text", x = dat.lab$x, y = 0.25, label = dat.lab$lab, angle = 80) + xlab("") + ylab("") + xlim(1, 14) +
+    #   theme(plot.title = element_blank(),
+    #         plot.margin = unit(c(-1, 0, -1, 1), "cm"),
+    #         axis.ticks.x = element_blank(),
+    #         axis.title.x = element_blank(),
+    #         axis.text.x = element_blank(),
+    #         axis.ticks.y = element_blank(),
+    #         axis.title.y = element_blank(),
+    #         axis.text.y = element_blank(),
+    #         panel.background = element_blank(),
+    #         panel.grid = element_blank())
+    
+    # barplot <- cowplot::plot_grid(plot_bar, NULL, plot_label, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    ## Create histogram for EQ4
+    dat.mcfirst <- dplyr::select(mcfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.mcfirst <- rbind(dat.mcfirst, filter(marks0_add, version == "mc.first") %>% dplyr::select(ev04))
+    
+    dat.ovfirst <- dplyr::select(ovfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.ovfirst <- rbind(dat.ovfirst, filter(marks0_add, version == "ov.first") %>% dplyr::select(ev04))
+    
+    dat.ev4 <- rbind(dat.mcfirst %>% mutate(version = "mcfirst"),
+                     dat.ovfirst %>% mutate(version = "ovfirst"))
+    
+    plot_hist <- function(data_hist, lab, xlab, crs){
+      hist <- ggplot(data_hist, aes(x = ev04)) +
+        geom_histogram(binwidth = 1, colour = "black", fill = "#ADB5BD") + xlab(xlab) + ylab("Count") +
+        scale_x_continuous(limits = c(1, 10), breaks = seq(1, 10, 1)) +
+        scale_y_continuous(expand = c(0, 0), limits = c(0, ifelse(crs == "ss", 55, 45))) +
+        theme(plot.margin = unit(c(0.5, 0, -2, 0), "cm"),
+              panel.background = element_blank(),
+              panel.grid = element_blank(),
+              plot.title = element_blank(),
+              axis.line.y = element_line(colour = "black", linetype = "solid"),
+              axis.line.x = element_line(colour = "black", linetype = "solid"))
+      
+      return(hist)
+    }
+
+     # hist.final <- cowplot::plot_grid(hist, NULL, plot_label.hist, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    hist.mcfirst <- plot_hist(dat.mcfirst, xlab = "4. Expected grade MCQs first", crs = course)
+    hist.ovfirst <- plot_hist(dat.ovfirst, xlab = "4. Expected grade VSAQs first", crs = course)
+    
+    hist <- cowplot::plot_grid(hist.mcfirst, NULL, hist.ovfirst, ncol = 1, align = "hv", axis = "tlbr", rel_heights = c(4.5, 1, 4.5),
+                               labels = c(labs_grid[[2]], "", labs_grid[[3]]))
+    
+    final_plot <- cowplot::plot_grid(plot_bar, hist,
+                                     nrow = 1, ncol = 2, align = "hv", axis = "tlbr",
+                                      rel_widths = c(3, 1), labels = c(labs_grid[[1]], ""))
+    
+    return(list(dat, final_plot, dat.ev4))
+}
+                                                                                   
+dat.ss <- plot(ev_ss_data, "ss", labs_grid = c("a", "b", "c"))[[2]]    
+dat.vb <- plot(as.data.frame(ot_vb_data), "vb", labs_grid = c("d", "e", "f"))[[2]] 
+# ot_vb_data is a tibble and the code works only for dataframes due to vector extraction
+
+# Save figures
+plot_final <- cowplot::plot_grid(dat.ss, dat.vb, ncol = 1, align = "hv", axis = "tlbr", rel_heights = c(1, 1))
+
+ggsave("evplot_ver2.png", plot_final, path = "C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Figures", 
+       dpi = 600, height = 15, width = 15)
+ggsave("evplot_ver2.pdf", plot_final, path = "C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Figures", 
+       dpi = 600, height = 15, width = 15)
+
+``` 
+
+### 2.6.2. Histograms next to each other
+```{r}
+### Get ss data
+load("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+load("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+ev_ss_data <- rbind(ev_ss_mcfirst, ev_ss_ovfirst)
+
+# Add marks for ev04 because answers 0 are actually 0 points for answers which are not integers
+marks0 <- readxl::read_excel("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Spreadsheets/cijfers evaluatievraag 4.xlsx")
+marks0ss <- filter(marks0, Blok == "SS") %>% mutate(version = ifelse(Versie == "A", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+marks0vb <- filter(marks0, Blok == "VB" )%>% mutate(version = ifelse(Versie == "B", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+
+### Get function for figures
+plot <- function(df, course, labs_grid){
+    # Get data
+    mcfirst <- filter(df, version == "mc.first") %>% dplyr::select(ev01:ev09)
+    ovfirst <- filter(df, version == "ov.first") %>% dplyr::select(ev01:ev09)
+    
+    if(course == "vb"){
+      marks0_add <- marks0vb
+    }
+    
+    else{
+      marks0_add <- marks0ss
+    }
+    
+    dat <- tibble(answer = as.character(), prop = as.numeric(), ev = as.character())
+    n <- 1
+    
+    for(d in list("mcfirst", "ovfirst")){
+        for(i in 1:3){
+             dat.temp <- get(d)
+          
+             vector <- dat.temp[, i]
+             vector <- ifelse(vector == 0, NA, vector)
+             
+             ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                                ifelse(vector == 0.02, "Disagree",
+                                                                                ifelse(vector == 0.03, "Neutral",
+                                                                                ifelse(vector == 0.04, "Agree",
+                                                                                ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                       prop = round(Freq * 100, digits = 0)) %>%
+                 filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", d, ".", i, sep = ""),
+                                                                                   sort_ind = n)
+             
+             dat <- rbind(dat, ph) 
+             n <- n + 1
+        }
+    }
+    
+    for(i in 5:9){
+      dat.temp <- df %>% dplyr::select(ev01:ev09)
+      
+      vector <- dat.temp[, i]
+      vector <- ifelse(vector == 0, NA, vector)
+             
+      ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                         ifelse(vector == 0.02, "Disagree",
+                                                                         ifelse(vector == 0.03, "Neutral",
+                                                                         ifelse(vector == 0.04, "Agree",
+                                                                         ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                prop = round(Freq * 100, digits = 0)) %>%
+        filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", i, sep = ""),
+                                                                          sort_ind = n)
+             
+      dat <- rbind(dat, ph) 
+      n <- n + 1
+    }
+      
+    dat <- rbind(dat, data.frame(answer = NA, prop = NA, ev = "space1", sort_ind = 2.5), 
+                      data.frame(answer = NA, prop = NA, ev = "space2", sort_ind = 4.5),
+                      data.frame(answer = NA, prop = NA, ev = "space3", sort_ind = 6.5))
+    dat <- dat %>% mutate(ev = factor(ev, levels = c("EQ.mcfirst.1", "EQ.ovfirst.1", "space1", "EQ.mcfirst.2", "EQ.ovfirst.2", "space2",
+                                                     "EQ.mcfirst.3", "EQ.ovfirst.3", "space3",
+                                                     "EQ.5", "EQ.6", "EQ.7", "EQ.8", "EQ.9")),
+                          answer = factor(answer, levels = c("Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"))) %>%
+      dplyr::select(ev, answer, prop, sort_ind) %>% arrange(ev, answer)
+    
+    # Main plot
+    plot_bar <- ggplot(data = dat, aes(fill = answer, x = ev, y = prop)) +
+      geom_bar(position = "fill", stat = "identity") + 
+      geom_vline(xintercept = 3, linetype = "dashed") + geom_vline(xintercept = 6, linetype = "dashed") +
+      geom_vline(xintercept = 9, linetype = "dashed") +
+      scale_y_continuous(expand = c(0, 0), labels = c("0", "25", "50", "75", "100")) +
+      scale_x_discrete(labels = c("MCQs", "VSAQs", "", "MCQs", "VSAQs", "", "MCQs", "VSAQS", "", "EQ5", "EQ6", "EQ7", "EQ8", "EQ9")) +
+      scale_fill_manual(values = c("#648FFF", "#785EF0", "#DC267F", "#FE6100", "#FFB000")) +
+      xlab("") + ylab("Percentage (%)") + guides(fill = guide_legend(reverse = TRUE)) +
+      theme_min() +
+      theme(legend.position = "top",
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.5, 0, -2, 1), "cm"))
+    
+    # Data for labels
+    dat.lab <- data.frame(x = c(1.5, 4.5, 7.5, 12),
+                          lab = c("EQ1", "EQ2", "EQ3", "End of test"))
+    
+    # Plot for labels
+    plot_label <- ggplot() +
+      annotate("text", x = dat.lab$x, y = 0.25, label = dat.lab$lab) + xlab("") + ylab("") + xlim(1, 14) +
+      theme(plot.background = element_blank(),
+            plot.title = element_blank(),
+            plot.margin = unit(c(-1, 0, -1, 1), "cm"),
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid = element_blank())
+    
+    # barplot <- cowplot::plot_grid(plot_bar, NULL, plot_label, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    ## Create histogram for EQ4
+    dat.mcfirst <- dplyr::select(mcfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.mcfirst <- rbind(dat.mcfirst, filter(marks0_add, version == "mc.first") %>% dplyr::select(ev04))
+    
+    dat.ovfirst <- dplyr::select(ovfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100 + 0.5)
+    dat.ovfirst <- rbind(dat.ovfirst, filter(marks0_add, version == "ov.first") %>% dplyr::select(ev04))
+    
+    dat.ev4 <- rbind(dat.mcfirst %>% mutate(Question = "MCQs"),
+                     dat.ovfirst %>% mutate(Question = "VSAQs"))
+
+    hist <- ggplot(dat.ev4, aes(x = ev04, fill = Question)) + 
+      geom_histogram(binwidth = 0.5, colour = "black", alpha = 0.6, position = "identity") +
+      scale_fill_manual(values = c("#648FFF", "#DC267F")) +
+      xlab("EQ4") + ylab("") + 
+      scale_x_continuous(limits = c(1, 10.5), breaks = seq(1, 10.5, 0.5), labels = c("1", "", "2", "", "3", "", 
+                                                                                     "4", "", "5", "", "6", "", 
+                                                                                     "7", "", "8", "", "9", "", 
+                                                                                     "10", "")) +
+      scale_y_continuous(expand = c(0, 0)) +
+      theme(plot.background = element_blank(),
+            plot.margin = unit(c(0.5, 0, -2, 0), "cm"),
+            panel.background = element_blank(),
+            panel.grid = element_blank(),
+            plot.title = element_blank(),
+            axis.line.y = element_blank(),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.line.x = element_line(colour = "black", linetype = "solid"),
+            axis.text.x = element_text(hjust = 1),
+            legend.title = element_blank()) +
+            theme(legend.position = "top")
+
+     # hist.final <- cowplot::plot_grid(hist, NULL, plot_label.hist, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    final_plot <- cowplot::plot_grid(plot_bar, hist, plot_label, NULL,
+                                     nrow = 2, ncol = 2, align = "hv", axis = "tlbr",
+                                     rel_heights = c(6, 1), rel_widths = c(3, 2), labels = c(labs_grid[[2]], labs_grid[[3]]))
+    
+    return(final_plot)
+}
+                                                                                   
+dat.ss <- plot(ev_ss_data, "ss", labs_grid = c("A", "B", "C")) 
+dat.vb <- plot(as.data.frame(ot_vb_data), "vb", labs_grid = c("D", "E", "F"))
+# ot_vb_data is a tibble and the code works only for dataframes due to vector extraction
+
+# Save figures
+plot_final <- cowplot::plot_grid(dat.ss, dat.vb, ncol = 1, align = "hv", axis = "tlbr", rel_heights = c(1, 1))
+ggsave("evplot_ver3.png", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+ggsave("evplot_ver3.pdf", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+
+``` 
+
+
+### 2.6.3. Histograms overlapping
+```{r}
+# Load in recoded evaluative questions for S&S
+# ev_questions_ss <- readxl::read_excel("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/ev questions ss a.xlsx", sheet = "Sheet1")
+# ev_questions_ss$ev <- gsub("Evaluatievraag ", "ev", ev_questions_ss$ev)
+# ev_questions_ss <- ev_questions_ss %>% arrange(ev)
+# ev_ss <- split(ev_questions_ss, ev_questions_ss$ev)
+# ev_ss <- cbind(ev_ss[[1]]$score, ev_ss[[2]]$score, ev_ss[[3]]$score, ev_ss[[4]]$score, ev_ss[[5]]$score,
+#                ev_ss[[6]]$score, ev_ss[[7]]$score, ev_ss[[8]]$score, ev_ss[[9]]$score)
+# ev_ss_mcfirst <- as.data.frame(ev_ss) %>% mutate(version = "mc.first")
+# colnames(ev_ss_mcfirst) <- c("ev01", "ev02", "ev03", "ev04", "ev05", "ev06", "ev07", "ev08", "ev09", "version")
+# save(ev_ss_mcfirst, file = "~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+# 
+# ev_questions_ss <- readxl::read_excel("~/Research/[] Medical Education/1. VSAQs/Spreadsheets/ev questions ss b.xlsx", sheet = "Sheet1")
+# ev_questions_ss$ev <- gsub("Evaluatievraag ", "ev", ev_questions_ss$ev)
+# ev_questions_ss <- ev_questions_ss %>% arrange(ev)
+# ev_ss <- split(ev_questions_ss, ev_questions_ss$ev)
+# ev_ss <- cbind(ev_ss[[1]]$score, ev_ss[[2]]$score, ev_ss[[3]]$score, ev_ss[[4]]$score, ev_ss[[5]]$score,
+#                ev_ss[[6]]$score, ev_ss[[7]]$score, ev_ss[[8]]$score, ev_ss[[9]]$score)
+# ev_ss_ovfirst <- as.data.frame(ev_ss) %>% mutate(version = "ov.first")
+# colnames(ev_ss_ovfirst) <- c("ev01", "ev02", "ev03", "ev04", "ev05", "ev06", "ev07", "ev08", "ev09", "version")
+# save(ev_ss_ovfirst, file = "~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+
+### Get ss data
+load("~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_a.Rdata")
+load("~/Research/[] Medical Education/1. VSAQs/Codes/Dataframes/ev_ss_b.Rdata")
+ev_ss_data <- rbind(ev_ss_mcfirst, ev_ss_ovfirst)
+
+# Add marks for ev04 because answers 0 are actually 0 points for answers which are not integers
+marks0 <- readxl::read_excel("C:/Users/rjjanse/OneDrive - LUMC/Research/Projects/5. VSAQs/Spreadsheets/cijfers evaluatievraag 4.xlsx")
+marks0ss <- filter(marks0, Blok == "SS") %>% mutate(version = ifelse(Versie == "A", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+marks0vb <- filter(marks0, Blok == "VB" )%>% mutate(version = ifelse(Versie == "B", "mc.first", "ov.first"),
+                                                    ev04 = round(as.numeric(Cijfer), digits = 0))
+
+### Get function for figures
+plot <- function(df, course, labs_grid){
+    # Get data
+    mcfirst <- filter(df, version == "mc.first") %>% dplyr::select(ev01:ev09)
+    ovfirst <- filter(df, version == "ov.first") %>% dplyr::select(ev01:ev09)
+    
+    if(course == "vb"){
+      marks0_add <- marks0vb
+    }
+    
+    else{
+      marks0_add <- marks0ss
+    }
+    
+    dat <- tibble(answer = as.character(), prop = as.numeric(), ev = as.character())
+    n <- 1
+    
+    for(d in list("mcfirst", "ovfirst")){
+        for(i in 1:3){
+             dat.temp <- get(d)
+          
+             vector <- dat.temp[, i]
+             vector <- ifelse(vector == 0, NA, vector)
+             
+             ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                                ifelse(vector == 0.02, "Disagree",
+                                                                                ifelse(vector == 0.03, "Neutral",
+                                                                                ifelse(vector == 0.04, "Agree",
+                                                                                ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                       prop = round(Freq * 100, digits = 0)) %>%
+                 filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", d, ".", i, sep = ""),
+                                                                                   sort_ind = n)
+             
+             dat <- rbind(dat, ph) 
+             n <- n + 1
+        }
+    }
+    
+    for(i in 5:9){
+      dat.temp <- df %>% dplyr::select(ev01:ev09)
+      
+      vector <- dat.temp[, i]
+      vector <- ifelse(vector == 0, NA, vector)
+             
+      ph <- as.data.frame(prop.table(table(vector))) %>% mutate(answer = ifelse(vector == 0.01, "Strongly disagree",
+                                                                         ifelse(vector == 0.02, "Disagree",
+                                                                         ifelse(vector == 0.03, "Neutral",
+                                                                         ifelse(vector == 0.04, "Agree",
+                                                                         ifelse(vector == 0.05, "Strongly agree", NA))))),
+                                                                prop = round(Freq * 100, digits = 0)) %>%
+        filter(!is.na(answer)) %>% dplyr::select(answer, prop) %>% mutate(ev = paste0("EQ", ".", i, sep = ""),
+                                                                          sort_ind = n)
+             
+      dat <- rbind(dat, ph) 
+      n <- n + 1
+    }
+      
+    dat <- rbind(dat, data.frame(answer = NA, prop = NA, ev = "space1", sort_ind = 2.5), 
+                      data.frame(answer = NA, prop = NA, ev = "space2", sort_ind = 4.5),
+                      data.frame(answer = NA, prop = NA, ev = "space3", sort_ind = 6.5))
+    dat <- dat %>% mutate(ev = factor(ev, levels = c("EQ.mcfirst.1", "EQ.ovfirst.1", "space1", "EQ.mcfirst.2", "EQ.ovfirst.2", "space2",
+                                                     "EQ.mcfirst.3", "EQ.ovfirst.3", "space3",
+                                                     "EQ.5", "EQ.6", "EQ.7", "EQ.8", "EQ.9")),
+                          answer = factor(answer, levels = c("Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"))) %>%
+      dplyr::select(ev, answer, prop, sort_ind) %>% arrange(ev, answer)
+    
+    # Main plot
+    plot_bar <- ggplot(data = dat, aes(fill = answer, x = ev, y = prop)) +
+      geom_bar(position = "fill", stat = "identity") + 
+      geom_vline(xintercept = 3, linetype = "dashed") + geom_vline(xintercept = 6, linetype = "dashed") +
+      geom_vline(xintercept = 9, linetype = "dashed") +
+      scale_y_continuous(expand = c(0, 0), labels = c("0", "25", "50", "75", "100")) +
+      scale_x_discrete(labels = c("MCQs", "VSAQs", "", "MCQs", "VSAQs", "", "MCQs", "VSAQS", "", "EQ5", "EQ6", "EQ7", "EQ8", "EQ9")) +
+      scale_fill_manual(values = c("#648FFF", "#785EF0", "#DC267F", "#FE6100", "#FFB000")) +
+      xlab("") + ylab("Percentage (%)") + guides(fill = guide_legend(reverse = TRUE)) +
+      theme_min() +
+      theme(legend.position = "top",
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.5, 0, -2, 1), "cm"))
+    
+    # Data for labels
+    dat.lab <- data.frame(x = c(1.5, 4.5, 7.5, 12),
+                          lab = c("EQ1", "EQ2", "EQ3", "End of test"))
+    
+    # Plot for labels
+    plot_label <- ggplot() +
+      annotate("text", x = dat.lab$x, y = 0.25, label = dat.lab$lab) + xlab("") + ylab("") + xlim(1, 14) +
+      theme(plot.background = element_blank(),
+            plot.title = element_blank(),
+            plot.margin = unit(c(-1, 0, -1, 1), "cm"),
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid = element_blank())
+    
+    # barplot <- cowplot::plot_grid(plot_bar, NULL, plot_label, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    ## Create histogram for EQ4
+    dat.mcfirst <- dplyr::select(mcfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.mcfirst <- rbind(dat.mcfirst, filter(marks0_add, version == "mc.first") %>% dplyr::select(ev04))
+    
+    dat.ovfirst <- dplyr::select(ovfirst, ev04) %>% filter(ev04 != 0 & !is.null(ev04)) %>% mutate(ev04 = ev04 * 100)
+    dat.ovfirst <- rbind(dat.ovfirst, filter(marks0_add, version == "ov.first") %>% dplyr::select(ev04))
+    
+    dat.ev4 <- rbind(dat.mcfirst %>% mutate(Question = "MCQs"),
+                     dat.ovfirst %>% mutate(Question = "VSAQs"))
+
+    hist <- ggplot(dat.ev4, aes(x = ev04, fill = Question)) + 
+      geom_histogram(binwidth = 1, colour = "black", alpha = 0.6, position = "identity") +
+      scale_fill_manual(values = c("#648FFF", "#DC267F")) +
+      xlab("EQ4") + ylab("") + 
+      scale_x_continuous(limits = c(1, 10), breaks = seq(1, 10, 1)) +
+      scale_y_continuous(expand = c(0, 0)) +
+      theme(plot.background = element_blank(),
+            plot.margin = unit(c(0.5, 0, -2, 0), "cm"),
+            panel.background = element_blank(),
+            panel.grid = element_blank(),
+            plot.title = element_blank(),
+            axis.line.y = element_blank(),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.line.x = element_line(colour = "black", linetype = "solid"),
+            legend.title = element_blank()) +
+            theme(legend.position = "top")
+
+     # hist.final <- cowplot::plot_grid(hist, NULL, plot_label.hist, ncol = 1, align = "hv", axis = "tblr", rel_heights = c(6, 0, 1))
+    
+    final_plot <- cowplot::plot_grid(plot_bar, hist, plot_label, NULL,
+                                     nrow = 2, ncol = 2, align = "hv", axis = "tlbr",
+                                     rel_heights = c(6, 1), rel_widths = c(3, 2), labels = c(labs_grid[[1]], labs_grid[[2]]))
+    
+    return(final_plot)
+}
+                                                                                   
+dat.ss <- plot(ev_ss_data, "ss", labs_grid = c("A", "B", "C"))   
+dat.vb <- plot(as.data.frame(ot_vb_data), "vb", labs_grid = c("D", "E", "F"))
+# ot_vb_data is a tibble and the code works only for dataframes due to vector extraction
+
+# Save figures
+plot_final <- cowplot::plot_grid(dat.ss, dat.vb, ncol = 1, align = "hv", axis = "tlbr", rel_heights = c(1, 1))
+ggsave("evplot_ver4.png", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+ggsave("evplot_ver4.tiff", plot_final, path = "~/Research/[] Medical Education/1. VSAQs/Figures/", dpi = 600, height = 13, width = 15)
+
+```
+
+
+# 3. Descriptive trendline for % of students making question correct for VSAQs compared to MCQs
+```{r}
+### Create function for plot
+plt <- function(course, type){
+  # Amount of questions
+  qn <- ifelse(course == "ss", 25, 24)
+  tl <- ifelse(course == "ss", "RM", "DA")
+  
+  # Load in data and transpose
+  mc <- t(get(paste0("ot_", course, "_mc")) %>% filter(version == "mc.first")) %>% as.data.frame() %>% slice(2:(qn + 1)) %>%
+    mutate(across(.fns = as.numeric))
+  ov <- t(get(paste0("ot_", course, "_vsaq")) %>% filter(version == "ov.first")) %>% as.data.frame() %>% slice(2:(qn + 1)) %>%
+    mutate(across(.fns = as.numeric))
+  
+  # Amount of individuals that answered
+  n.mc <- ncol(mc)
+  n.ov <- ncol(ov)
+  
+  # Calculate per row how many people got the question correct (in %)
+  mc <- mc %>% mutate(correct = round(rowSums(mc) / n.mc * 100), question = 1:qn, type = "MCQs") %>% dplyr::select(question, correct, type)
+  ov <- ov %>% mutate(correct = round(rowSums(ov) / n.ov * 100), question = 1:qn, type = "VSAQs") %>% dplyr::select(question, correct, type)
+  
+  dat.plot <- rbind(mc, ov)
+  
+  if(type == "trend"){
+    ## Start creating plot
+    p <- ggplot(data = dat.plot, aes(x = question, y = correct, colour = type)) + geom_point() + 
+      geom_smooth(method = "lm", size = 1, alpha = 0.5) +
+      ylab("Percentage correct (%)") + xlab("Question no.") + labs(title = paste0("% of students scoring correct per question in ", tl)) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+            panel.background = element_blank(),
+            axis.line.x.bottom = element_line(colour = "black"),
+            axis.line.y.left = element_line(colour = "black"),
+            legend.position = "bottom",
+            legend.title = element_blank())
+  
+    ggsave(paste0("plot_perc_correct_", type, "_", course, ".png"), p, path = "~/Research/[] Medical Education/1. VSAQs/Figures/",
+          dpi = 600, width = 7, height = 5)
+  }
+  
+  else{
+    ## Start creating plot
+    p <- ggplot(data = dat.plot, aes(x = question, y = correct, colour = type, linetype = type)) + geom_line(size = 1, alpha = 0.8) +
+      geom_abline(size = 1, alpha = 0.5, colour = "darkgrey") +
+      ylab("Percentage correct (%)") + xlab("Question no.") + labs(title = paste0("% of students scoring correct per question in ", tl)) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+            panel.background = element_blank(),
+            axis.line.x.bottom = element_line(colour = "black"),
+            axis.line.y.left = element_line(colour = "black"),
+            legend.position = "bottom",
+            legend.title = element_blank())
+  
+    ggsave(paste0("plot_perc_correct_", type, "_", course, ".png"), p, path = "~/Research/[] Medical Education/1. VSAQs/Figures/",
+          dpi = 600, width = 7, height = 5)
+  }
+}
+
+# Run function
+plt("ss", "trend")
+plt("ss", "line")
+plt("vb", "trend")
+plt("vb", "line")
+
+```
